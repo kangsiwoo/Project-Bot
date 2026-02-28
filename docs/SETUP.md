@@ -56,10 +56,7 @@ uv pip install -r requirements.txt
 ## 3단계: Claude Code에 MCP 서버 등록
 
 ```bash
-claude mcp add --transport stdio \
-  --env DISCORD_TOKEN=봇토큰여기 \
-  --env DISCORD_GUILD_ID=서버ID여기 \
-  project-bot -- python /path/to/project-bot/server.py
+claude mcp add project-bot --transport stdio -e DISCORD_TOKEN=봇토큰여기 -e DISCORD_GUILD_ID=서버ID여기 -- python /path/to/project-bot/server.py
 ```
 
 **DISCORD_GUILD_ID 확인 방법:**

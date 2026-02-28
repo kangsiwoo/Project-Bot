@@ -13,8 +13,13 @@ from mcp.server.models import InitializationOptions
 from config import DEFAULT_TEAMS, CUSTOM_TEAM_CHANNELS, NOTIFICATION_TYPES
 
 # 환경변수
-DISCORD_TOKEN = os.environ['DISCORD_TOKEN']
-DISCORD_GUILD_ID = int(os.environ['DISCORD_GUILD_ID'])
+DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
+DISCORD_GUILD_ID = os.environ.get('DISCORD_GUILD_ID')
+
+if not DISCORD_TOKEN or not DISCORD_GUILD_ID:
+    raise SystemExit("DISCORD_TOKEN과 DISCORD_GUILD_ID 환경 변수를 설정해주세요.")
+
+DISCORD_GUILD_ID = int(DISCORD_GUILD_ID)
 
 # Discord 봇
 intents = discord.Intents.default()
