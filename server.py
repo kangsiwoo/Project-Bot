@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from typing import Any
 
@@ -267,13 +268,42 @@ async def handle_add_channel(arguments: dict[str, Any]) -> list[types.TextConten
 
 
 async def handle_delete_project(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#5 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="delete_project: 미구현")]
+    guild = get_guild()
+    project_name = arguments["project_name"]
+    prefix = f"{project_name} / "
+
+    targets = [c for c in guild.categories if c.name.startswith(prefix)]
+    if not targets:
+        raise ValueError(f"프로젝트 '{project_name}'를 찾을 수 없습니다")
+
+    deleted_channels = 0
+    for category in targets:
+        for channel in category.channels:
+            await channel.delete()
+            deleted_channels += 1
+        await category.delete()
+
+    summary = (
+        f"프로젝트 '{project_name}' 삭제 완료\n"
+        f"카테고리 {len(targets)}개, 채널 {deleted_channels}개 삭제됨"
+    )
+    return [types.TextContent(type="text", text=summary)]
 
 
 async def handle_list_projects(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#5 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="list_projects: 미구현")]
+    guild = get_guild()
+    projects: dict[str, list[str]] = {}
+
+    for category in guild.categories:
+        if " / " not in category.name:
+            continue
+        project_name, team_name = category.name.split(" / ", 1)
+        projects.setdefault(project_name, []).append(team_name)
+
+    if not projects:
+        return [types.TextContent(type="text", text="등록된 프로젝트가 없습니다")]
+
+    return [types.TextContent(type="text", text=json.dumps(projects, ensure_ascii=False, indent=2))]
 
 
 async def handle_send_notification(arguments: dict[str, Any]) -> list[types.TextContent]:
