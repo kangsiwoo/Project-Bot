@@ -209,8 +209,32 @@ async def handle_add_team(arguments: dict[str, Any]) -> list[types.TextContent]:
 
 
 async def handle_add_channel(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#4 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="add_channel: 미구현")]
+    guild = get_guild()
+    project_name = arguments["project_name"]
+    team_name = arguments["team_name"]
+    channel_name = arguments["channel_name"]
+
+    # 카테고리 검색
+    target_name = f"{project_name} / {team_name}"
+    category = next(
+        (c for c in guild.categories if c.name == target_name), None
+    )
+    if category is None:
+        raise ValueError(
+            f"카테고리 '{target_name}'를 찾을 수 없습니다"
+        )
+
+    # 채널 중복 확인
+    if any(ch.name == channel_name for ch in category.channels):
+        raise ValueError(f"채널 '{channel_name}'이(가) 이미 존재합니다")
+
+    await category.create_text_channel(channel_name)
+
+    summary = (
+        f"채널 '{channel_name}' 생성 완료\n"
+        f"위치: {target_name}"
+    )
+    return [types.TextContent(type="text", text=summary)]
 
 
 async def handle_delete_project(arguments: dict[str, Any]) -> list[types.TextContent]:
