@@ -320,32 +320,25 @@ Discord 유저가 개인 채널에서 AI와 직접 대화하며 프로젝트를 
 ### 아키텍처
 
 ```
-Discord 유저                    Project Bot                    Anthropic API
+Discord 유저                    Project Bot (Discord 봇)         Claude Code CLI
      │                              │                              │
-     │  메시지 전송                  │                              │
+     │  "프로젝트 만들어줘"         │                              │
      ├─────────────────────────────►│                              │
-     │  (bot-console 채널)          │  API 호출 (tools 포함)       │
+     │  (bot-console 채널)          │  subprocess 실행             │
+     │                              │  claude -p "프로젝트 만들어줘"│
      │                              ├─────────────────────────────►│
      │                              │                              │
-     │                              │  tool_use 응답               │
-     │                              │◄─────────────────────────────┤
-     │                              │                              │
-     │                              │  TOOL_HANDLERS 실행          │
+     │                              │  Claude Code가 MCP 도구 사용 │
      │                              │  (create_project 등)         │
      │                              │                              │
-     │                              │  도구 결과 + 재호출           │
-     │                              ├─────────────────────────────►│
-     │                              │                              │
-     │                              │  최종 텍스트 응답             │
+     │                              │  stdout 결과 반환            │
      │  AI 응답 전송                │◄─────────────────────────────┤
      │◄─────────────────────────────┤                              │
 ```
 
-### 추가 환경 변수
-
-| 변수 | 설명 |
-|------|------|
-| `ANTHROPIC_API_KEY` | Anthropic API 키 (bot-console AI 대화용) |
+- Anthropic API 키 불필요 - Claude Code 구독만으로 동작
+- Claude Code에 등록된 MCP 도구를 자동으로 사용
+- `claude --resume` 옵션으로 유저별 세션 유지
 
 ### 개발 현황
 
