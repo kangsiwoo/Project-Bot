@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import os
 from typing import Any
@@ -319,8 +320,47 @@ async def handle_list_projects(arguments: dict[str, Any]) -> list[types.TextCont
 
 
 async def handle_send_notification(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#6 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="send_notification: 미구현")]
+    guild = get_guild()
+    project_name = arguments["project_name"]
+    message = arguments["message"]
+    event_type = arguments["event_type"]
+
+    if event_type not in NOTIFICATION_TYPES:
+        raise ValueError(f"알 수 없는 event_type: {event_type}")
+
+    # 프로젝트 내 claude-알림 채널 검색
+    prefix = f"{project_name} / "
+    notification_channel = None
+    for category in guild.categories:
+        if not category.name.startswith(prefix):
+            continue
+        for channel in category.channels:
+            if "claude-알림" in channel.name:
+                notification_channel = channel
+                break
+        if notification_channel:
+            break
+
+    if notification_channel is None:
+        raise ValueError(
+            f"프로젝트 '{project_name}'에서 claude-알림 채널을 찾을 수 없습니다"
+        )
+
+    # Embed 생성
+    nt = NOTIFICATION_TYPES[event_type]
+    embed = discord.Embed(
+        title=f"{nt['emoji']} {nt['label']}",
+        description=message,
+        color=nt["color"],
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+
+    await notification_channel.send(embed=embed)
+
+    return [types.TextContent(
+        type="text",
+        text=f"알림 전송 완료 [{nt['label']}] → {notification_channel.name}",
+    )]
 
 
 async def handle_send_message(arguments: dict[str, Any]) -> list[types.TextContent]:
