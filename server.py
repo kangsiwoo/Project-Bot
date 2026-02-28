@@ -162,8 +162,45 @@ async def list_tools() -> list[types.Tool]:
 # ---------------------------------------------------------------------------
 
 async def handle_create_project(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#2 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="create_project: 미구현")]
+    guild = get_guild()
+    project_name = arguments["project_name"]
+
+    # 커스텀 팀이 지정되었으면 파싱, 아니면 기본 템플릿 사용
+    custom_teams_raw = arguments.get("teams", "")
+    if custom_teams_raw:
+        team_names = [t.strip() for t in custom_teams_raw.split(",") if t.strip()]
+    else:
+        team_names = None
+
+    created_categories = []
+    created_channels = []
+
+    if team_names is None:
+        # 기본 5개 팀 템플릿
+        teams = DEFAULT_TEAMS
+    else:
+        # 커스텀 팀: CUSTOM_TEAM_CHANNELS 템플릿 사용
+        teams = {}
+        for name in team_names:
+            teams[name] = [
+                ch.format(team_name=name) for ch in CUSTOM_TEAM_CHANNELS
+            ]
+
+    for team_name, channels in teams.items():
+        category_name = f"{project_name} / {team_name}"
+        category = await guild.create_category(category_name)
+        created_categories.append(category_name)
+
+        for ch_name in channels:
+            await category.create_text_channel(ch_name)
+            created_channels.append(ch_name)
+
+    summary = (
+        f"프로젝트 '{project_name}' 생성 완료\n"
+        f"카테고리 {len(created_categories)}개, 채널 {len(created_channels)}개 생성됨\n"
+        f"카테고리: {', '.join(created_categories)}"
+    )
+    return [types.TextContent(type="text", text=summary)]
 
 
 async def handle_add_team(arguments: dict[str, Any]) -> list[types.TextContent]:
