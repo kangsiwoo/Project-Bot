@@ -33,6 +33,18 @@ def get_guild() -> discord.Guild:
     return guild
 
 
+def find_channel(guild: discord.Guild, project_name: str, keyword: str):
+    """프로젝트 카테고리 내에서 keyword를 포함하는 채널을 찾는다."""
+    prefix = f"{project_name} / "
+    for category in guild.categories:
+        if not category.name.startswith(prefix):
+            continue
+        for channel in category.channels:
+            if keyword in channel.name:
+                return channel
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 도구 스키마 등록
 # ---------------------------------------------------------------------------
@@ -312,13 +324,46 @@ async def handle_send_notification(arguments: dict[str, Any]) -> list[types.Text
 
 
 async def handle_send_message(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#7 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="send_message: 미구현")]
+    guild = get_guild()
+    project_name = arguments["project_name"]
+    keyword = arguments["channel_keyword"]
+    content = arguments["content"]
+
+    channel = find_channel(guild, project_name, keyword)
+    if channel is None:
+        raise ValueError(
+            f"프로젝트 '{project_name}'에서 '{keyword}' 채널을 찾을 수 없습니다"
+        )
+
+    await channel.send(content)
+
+    return [types.TextContent(
+        type="text",
+        text=f"메시지 전송 완료 → {channel.name}",
+    )]
 
 
 async def handle_read_messages(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#7 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="read_messages: 미구현")]
+    guild = get_guild()
+    project_name = arguments["project_name"]
+    keyword = arguments["channel_keyword"]
+    limit = arguments.get("limit", 10)
+
+    channel = find_channel(guild, project_name, keyword)
+    if channel is None:
+        raise ValueError(
+            f"프로젝트 '{project_name}'에서 '{keyword}' 채널을 찾을 수 없습니다"
+        )
+
+    messages = []
+    async for msg in channel.history(limit=limit):
+        timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M")
+        messages.append(f"[{timestamp}] {msg.author.display_name}: {msg.content}")
+
+    if not messages:
+        return [types.TextContent(type="text", text="메시지가 없습니다")]
+
+    return [types.TextContent(type="text", text="\n".join(messages))]
 
 
 # 도구 이름 → 핸들러 매핑
