@@ -204,8 +204,37 @@ async def handle_create_project(arguments: dict[str, Any]) -> list[types.TextCon
 
 
 async def handle_add_team(arguments: dict[str, Any]) -> list[types.TextContent]:
-    """#3 이슈에서 구현 예정"""
-    return [types.TextContent(type="text", text="add_team: 미구현")]
+    guild = get_guild()
+    project_name = arguments["project_name"]
+    team_name = arguments["team_name"]
+    prefix = f"{project_name} / "
+
+    # 프로젝트 존재 확인
+    project_categories = [c for c in guild.categories if c.name.startswith(prefix)]
+    if not project_categories:
+        raise ValueError(f"프로젝트 '{project_name}'를 찾을 수 없습니다")
+
+    # 팀 중복 확인
+    new_category_name = f"{project_name} / {team_name}"
+    if any(c.name == new_category_name for c in guild.categories):
+        raise ValueError(f"팀 '{team_name}'이(가) 이미 존재합니다")
+
+    # 기본 템플릿에 있는 팀이면 해당 채널, 아니면 커스텀 채널
+    if team_name in DEFAULT_TEAMS:
+        channels = DEFAULT_TEAMS[team_name]
+    else:
+        channels = [ch.format(team_name=team_name) for ch in CUSTOM_TEAM_CHANNELS]
+
+    category = await guild.create_category(new_category_name)
+    for ch_name in channels:
+        await category.create_text_channel(ch_name)
+
+    summary = (
+        f"팀 '{team_name}' 추가 완료 (프로젝트: {project_name})\n"
+        f"카테고리: {new_category_name}\n"
+        f"채널 {len(channels)}개 생성됨"
+    )
+    return [types.TextContent(type="text", text=summary)]
 
 
 async def handle_add_channel(arguments: dict[str, Any]) -> list[types.TextContent]:
