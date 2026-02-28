@@ -1,0 +1,258 @@
+import asyncio
+import os
+from typing import Any
+
+import discord
+import mcp.server.stdio
+import mcp.types as types
+from mcp.server.lowlevel import NotificationOptions, Server
+from mcp.server.models import InitializationOptions
+
+from config import DEFAULT_TEAMS, CUSTOM_TEAM_CHANNELS, NOTIFICATION_TYPES
+
+# 환경변수
+DISCORD_TOKEN = os.environ['DISCORD_TOKEN']
+DISCORD_GUILD_ID = int(os.environ['DISCORD_GUILD_ID'])
+
+# Discord 봇
+intents = discord.Intents.default()
+intents.message_content = True
+intents.guilds = True
+bot = discord.Client(intents=intents)
+
+# MCP 서버
+server = Server("project-bot")
+
+
+def get_guild() -> discord.Guild:
+    """Discord 서버(길드) 객체를 반환한다."""
+    guild = bot.get_guild(DISCORD_GUILD_ID)
+    if not guild:
+        raise ValueError(f"Guild ID {DISCORD_GUILD_ID}를 찾을 수 없습니다")
+    return guild
+
+
+# ---------------------------------------------------------------------------
+# 도구 스키마 등록
+# ---------------------------------------------------------------------------
+
+@server.list_tools()
+async def list_tools() -> list[types.Tool]:
+    return [
+        types.Tool(
+            name="create_project",
+            description="프로젝트 카테고리와 채널을 일괄 생성합니다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "프로젝트명"},
+                    "teams": {
+                        "type": "string",
+                        "description": "커스텀 팀명 (쉼표 구분, 선택)",
+                    },
+                },
+                "required": ["project_name"],
+            },
+        ),
+        types.Tool(
+            name="add_team",
+            description="기존 프로젝트에 새로운 팀 카테고리를 추가합니다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "프로젝트명"},
+                    "team_name": {"type": "string", "description": "추가할 팀명"},
+                },
+                "required": ["project_name", "team_name"],
+            },
+        ),
+        types.Tool(
+            name="add_channel",
+            description="특정 팀에 채널을 추가합니다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "프로젝트명"},
+                    "team_name": {"type": "string", "description": "팀명"},
+                    "channel_name": {
+                        "type": "string",
+                        "description": "생성할 채널명",
+                    },
+                },
+                "required": ["project_name", "team_name", "channel_name"],
+            },
+        ),
+        types.Tool(
+            name="delete_project",
+            description="프로젝트의 모든 카테고리와 채널을 삭제합니다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "삭제할 프로젝트명"},
+                },
+                "required": ["project_name"],
+            },
+        ),
+        types.Tool(
+            name="list_projects",
+            description="등록된 모든 프로젝트 목록을 조회합니다",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
+        types.Tool(
+            name="send_notification",
+            description="프로젝트의 claude-알림 채널에 Embed 형식 알림을 전송합니다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "프로젝트명"},
+                    "message": {"type": "string", "description": "알림 메시지"},
+                    "event_type": {
+                        "type": "string",
+                        "description": "알림 타입 (plan/question/complete/error/build/test/deploy)",
+                        "enum": list(NOTIFICATION_TYPES.keys()),
+                    },
+                },
+                "required": ["project_name", "message", "event_type"],
+            },
+        ),
+        types.Tool(
+            name="send_message",
+            description="특정 채널에 일반 메시지를 전송합니다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "프로젝트명"},
+                    "channel_keyword": {
+                        "type": "string",
+                        "description": "채널 검색 키워드",
+                    },
+                    "content": {"type": "string", "description": "메시지 내용"},
+                },
+                "required": ["project_name", "channel_keyword", "content"],
+            },
+        ),
+        types.Tool(
+            name="read_messages",
+            description="특정 채널의 최근 메시지를 읽어옵니다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "프로젝트명"},
+                    "channel_keyword": {
+                        "type": "string",
+                        "description": "채널 검색 키워드",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "조회할 메시지 수 (기본값 10)",
+                        "default": 10,
+                    },
+                },
+                "required": ["project_name", "channel_keyword"],
+            },
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# 도구 핸들러 (Phase 2에서 개별 구현 예정)
+# ---------------------------------------------------------------------------
+
+async def handle_create_project(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#2 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="create_project: 미구현")]
+
+
+async def handle_add_team(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#3 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="add_team: 미구현")]
+
+
+async def handle_add_channel(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#4 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="add_channel: 미구현")]
+
+
+async def handle_delete_project(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#5 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="delete_project: 미구현")]
+
+
+async def handle_list_projects(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#5 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="list_projects: 미구현")]
+
+
+async def handle_send_notification(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#6 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="send_notification: 미구현")]
+
+
+async def handle_send_message(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#7 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="send_message: 미구현")]
+
+
+async def handle_read_messages(arguments: dict[str, Any]) -> list[types.TextContent]:
+    """#7 이슈에서 구현 예정"""
+    return [types.TextContent(type="text", text="read_messages: 미구현")]
+
+
+# 도구 이름 → 핸들러 매핑
+TOOL_HANDLERS = {
+    "create_project": handle_create_project,
+    "add_team": handle_add_team,
+    "add_channel": handle_add_channel,
+    "delete_project": handle_delete_project,
+    "list_projects": handle_list_projects,
+    "send_notification": handle_send_notification,
+    "send_message": handle_send_message,
+    "read_messages": handle_read_messages,
+}
+
+
+@server.call_tool()
+async def call_tool(
+    name: str, arguments: dict[str, Any]
+) -> list[types.TextContent]:
+    handler = TOOL_HANDLERS.get(name)
+    if not handler:
+        return [types.TextContent(type="text", text=f"알 수 없는 도구: {name}")]
+    try:
+        return await handler(arguments)
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"오류 발생: {e}")]
+
+
+# ---------------------------------------------------------------------------
+# 메인 진입점
+# ---------------------------------------------------------------------------
+
+async def main():
+    # Discord 봇을 백그라운드 태스크로 실행
+    bot_task = asyncio.create_task(bot.start(DISCORD_TOKEN))
+
+    # 봇이 준비될 때까지 대기
+    await bot.wait_until_ready()
+
+    # MCP 서버 실행 (stdio 트랜스포트)
+    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            InitializationOptions(
+                server_name="project-bot",
+                server_version="1.0.0",
+                capabilities=server.get_capabilities(
+                    notification_options=NotificationOptions(),
+                    experimental_capabilities={},
+                ),
+            ),
+        )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
