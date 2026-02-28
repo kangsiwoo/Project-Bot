@@ -13,8 +13,13 @@ from mcp.server.models import InitializationOptions
 from config import DEFAULT_TEAMS, CUSTOM_TEAM_CHANNELS, NOTIFICATION_TYPES
 
 # 환경변수
-DISCORD_TOKEN = os.environ['DISCORD_TOKEN']
-DISCORD_GUILD_ID = int(os.environ['DISCORD_GUILD_ID'])
+DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
+DISCORD_GUILD_ID = os.environ.get('DISCORD_GUILD_ID')
+
+if not DISCORD_TOKEN or not DISCORD_GUILD_ID:
+    raise SystemExit("DISCORD_TOKEN과 DISCORD_GUILD_ID 환경 변수를 설정해주세요.")
+
+DISCORD_GUILD_ID = int(DISCORD_GUILD_ID)
 
 # Discord 봇
 intents = discord.Intents.default()
@@ -440,8 +445,9 @@ async def main():
     # Discord 봇을 백그라운드 태스크로 실행
     bot_task = asyncio.create_task(bot.start(DISCORD_TOKEN))
 
-    # 봇이 준비될 때까지 대기
-    await bot.wait_until_ready()
+    # 봇이 준비될 때까지 대기 (로그인 완료 후 ready 상태까지)
+    while not bot.is_ready():
+        await asyncio.sleep(0.5)
 
     # MCP 서버 실행 (stdio 트랜스포트)
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
