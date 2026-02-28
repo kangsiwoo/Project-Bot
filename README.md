@@ -151,10 +151,7 @@ uv pip install discord.py mcp
 ### 3단계: Claude Code에 MCP 서버 등록
 
 ```bash
-claude mcp add --transport stdio \
-  --env DISCORD_TOKEN=봇토큰여기 \
-  --env DISCORD_GUILD_ID=서버ID여기 \
-  project-bot -- python /path/to/project-bot/server.py
+claude mcp add project-bot --transport stdio -e DISCORD_TOKEN=봇토큰여기 -e DISCORD_GUILD_ID=서버ID여기 -- python /path/to/project-bot/server.py
 ```
 
 이 명령 하나로 Claude Code가 Project Bot의 8개 도구를 인식하고 사용할 수 있게 됩니다.
@@ -287,6 +284,72 @@ git push origin feature/your-feature-name
 | 알림 보장 | 훅 단독 | CLAUDE.md + MCP + 훅 3중 구조 |
 | 등록 방법 | 별도 실행 필요 | `claude mcp add` 한 줄 |
 | 부가 기능 | 없음 | `read_messages`, `send_message` 추가 |
+
+---
+
+## 🤖 Bot-Console (개발 예정)
+
+Discord 유저가 개인 채널에서 AI와 직접 대화하며 프로젝트를 관리하는 기능입니다.
+
+### 개요
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Discord Server                                                   │
+│                                                                  │
+│ 📁 🤖 Bot Consoles                                               │
+│   ├── #bot-console-alice  ← Alice만 접근 가능                    │
+│   ├── #bot-console-bob    ← Bob만 접근 가능                      │
+│   └── #bot-console-carol  ← Carol만 접근 가능                    │
+│                                                                  │
+│ Alice: "my-app 프로젝트 만들어줘"                                │
+│ AI: [create_project 실행] "my-app 프로젝트를 생성했습니다."      │
+│                                                                  │
+│ Alice: "QA팀도 추가해줘"                                         │
+│ AI: [add_team 실행] "QA팀을 추가했습니다."                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 핵심 기능
+
+- **유저별 Private 채널**: 봇 시작 시 각 멤버에게 `bot-console-{username}` 채널 자동 생성
+- **AI 대화**: 채널에서 메시지를 보내면 AI(Claude)가 자동 응답
+- **MCP 도구 사용**: AI가 기존 8개 MCP 도구를 사용하여 프로젝트 관리
+- **세션 관리**: 유저별 대화 컨텍스트 유지 (최대 50개 메시지)
+
+### 아키텍처
+
+```
+Discord 유저                    Project Bot                    Anthropic API
+     │                              │                              │
+     │  메시지 전송                  │                              │
+     ├─────────────────────────────►│                              │
+     │  (bot-console 채널)          │  API 호출 (tools 포함)       │
+     │                              ├─────────────────────────────►│
+     │                              │                              │
+     │                              │  tool_use 응답               │
+     │                              │◄─────────────────────────────┤
+     │                              │                              │
+     │                              │  TOOL_HANDLERS 실행          │
+     │                              │  (create_project 등)         │
+     │                              │                              │
+     │                              │  도구 결과 + 재호출           │
+     │                              ├─────────────────────────────►│
+     │                              │                              │
+     │                              │  최종 텍스트 응답             │
+     │  AI 응답 전송                │◄─────────────────────────────┤
+     │◄─────────────────────────────┤                              │
+```
+
+### 추가 환경 변수
+
+| 변수 | 설명 |
+|------|------|
+| `ANTHROPIC_API_KEY` | Anthropic API 키 (bot-console AI 대화용) |
+
+### 개발 현황
+
+개발 이슈는 [GitHub Issues](https://github.com/kangsiwoo/Project-Bot/issues)에서 확인할 수 있습니다.
 
 ---
 
