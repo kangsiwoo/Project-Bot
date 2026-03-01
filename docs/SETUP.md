@@ -108,6 +108,27 @@ Claude Code에서 다음과 같이 테스트합니다:
 
 ---
 
+## 테스트 실행
+
+```bash
+# 가상환경 활성화 후
+source .venv/bin/activate
+
+# 전체 테스트 실행
+python -m pytest tests/ -v
+```
+
+### 알려진 Warnings
+
+테스트 실행 시 아래 2개의 warning이 발생할 수 있으며, **모두 외부 라이브러리 이슈로 코드에 영향 없습니다.**
+
+| Warning | 원인 | 영향 |
+|---------|------|------|
+| `DeprecationWarning: 'audioop' is deprecated` | discord.py 내부에서 Python 3.13 제거 예정인 `audioop` 모듈 사용 | 없음 (음성 기능 미사용) |
+| `RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited` | 무시 시나리오 테스트에서 AsyncMock이 호출되지 않을 때 발생 | 없음 (테스트 결과 정상) |
+
+---
+
 ## 트러블슈팅
 
 ### `Guild ID를 찾을 수 없습니다`
