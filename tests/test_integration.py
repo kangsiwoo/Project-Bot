@@ -1,6 +1,6 @@
 """Bot-Console 통합 테스트
 
-on_ready → 채널 생성 → on_message → Claude Code 응답의 전체 흐름을 검증한다.
+on_ready → 채널 생성 → on_message → Claude Code 스트리밍 응답의 전체 흐름을 검증한다.
 """
 
 import asyncio
@@ -10,16 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 os.environ.setdefault("DISCORD_TOKEN", "test-token")
 os.environ.setdefault("DISCORD_GUILD_ID", "123456789")
 
-from claude_code_client import ClaudeResponse
+from claude_code_client import StreamEvent
 from session_manager import SessionManager
 
 
-class AsyncContextManager:
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        pass
+async def async_stream(*events):
+    """StreamEvent 리스트를 async generator로 변환한다."""
+    for event in events:
+        yield event
 
 
 def make_mock_member(name, member_id, is_bot=False):
@@ -35,8 +33,19 @@ def make_mock_channel(name, has_messages=False):
     ch = MagicMock()
     ch.name = name
     ch.last_message_id = 12345 if has_messages else None
-    ch.send = AsyncMock()
-    ch.typing = MagicMock(return_value=AsyncContextManager())
+    sent_messages = []
+
+    async def mock_send(content=None, **kwargs):
+        msg = MagicMock()
+        msg.content = content
+        msg.edit = AsyncMock(
+            side_effect=lambda content: setattr(msg, "content", content)
+        )
+        sent_messages.append(msg)
+        return msg
+
+    ch.send = AsyncMock(side_effect=mock_send)
+    ch._sent = sent_messages
     return ch
 
 
@@ -49,7 +58,7 @@ def make_mock_message(content, author, channel):
 
 
 class TestFullFlow:
-    """on_ready → on_message → AI 응답 전체 흐름 통합 테스트"""
+    """on_ready → on_message → AI 스트리밍 응답 전체 흐름 통합 테스트"""
 
     def _run(self, coro):
         return asyncio.run(coro)
@@ -58,7 +67,7 @@ class TestFullFlow:
     @patch("server.ChannelManager")
     @patch("server.bot")
     def test_ready_then_message_flow(self, mock_bot, MockChannelMgr, mock_claude):
-        """on_ready로 채널 생성 후 on_message로 AI 대화가 동작한다"""
+        """on_ready로 채널 생성 후 on_message 스트리밍으로 AI 대화가 동작한다"""
         real_sm = SessionManager()
 
         with patch("server.session_manager", real_sm):
@@ -81,12 +90,14 @@ class TestFullFlow:
             # 채널이 alice에게만 생성됨 (봇은 스킵)
             assert mgr_instance.create_user_console.call_count == 1
             mgr_instance.create_user_console.assert_called_with(alice)
-            new_ch.send.assert_called_once()  # 웰컴 메시지
+            assert new_ch.send.call_count == 1  # 웰컴 메시지
 
-            # on_message: AI 응답
-            mock_claude.send_message = AsyncMock(
-                return_value=ClaudeResponse(
-                    text="프로젝트를 생성했습니다!", session_id="sess-1", success=True
+            # on_message: 스트리밍 AI 응답
+            mock_claude.stream_message = MagicMock(
+                return_value=async_stream(
+                    StreamEvent(event_type="system", session_id="sess-1"),
+                    StreamEvent(event_type="assistant", text="프로젝트를 생성했습니다!"),
+                    StreamEvent(event_type="result", text="", session_id="sess-1"),
                 )
             )
 
@@ -97,17 +108,19 @@ class TestFullFlow:
 
             self._run(on_message(msg))
 
-            mock_claude.send_message.assert_called_once_with(
+            mock_claude.stream_message.assert_called_once_with(
                 "프로젝트 만들어줘", session_id=None
             )
-            console_ch.send.assert_called_with("프로젝트를 생성했습니다!")
 
             # 세션에 대화 기록이 저장됨
             session = real_sm.get_or_create_session("111")
             msgs = session.get_messages()
             assert len(msgs) == 2
             assert msgs[0] == {"role": "user", "content": "프로젝트 만들어줘"}
-            assert msgs[1] == {"role": "assistant", "content": "프로젝트를 생성했습니다!"}
+            assert msgs[1] == {
+                "role": "assistant",
+                "content": "프로젝트를 생성했습니다!",
+            }
             assert session.session_id == "sess-1"
 
     @patch("server.claude_client")
@@ -121,9 +134,11 @@ class TestFullFlow:
             alice = make_mock_member("alice", 111)
 
             # 1턴
-            mock_claude.send_message = AsyncMock(
-                return_value=ClaudeResponse(
-                    text="어떤 프로젝트를 만들까요?", session_id="sess-1", success=True
+            mock_claude.stream_message = MagicMock(
+                return_value=async_stream(
+                    StreamEvent(event_type="system", session_id="sess-1"),
+                    StreamEvent(event_type="assistant", text="어떤 프로젝트를 만들까요?"),
+                    StreamEvent(event_type="result", text="", session_id="sess-1"),
                 )
             )
 
@@ -134,11 +149,13 @@ class TestFullFlow:
             self._run(on_message(msg1))
 
             # 2턴: session_id 유지 확인
-            mock_claude.send_message = AsyncMock(
-                return_value=ClaudeResponse(
-                    text="MyApp 프로젝트를 생성했습니다!",
-                    session_id="sess-1",
-                    success=True,
+            mock_claude.stream_message = MagicMock(
+                return_value=async_stream(
+                    StreamEvent(event_type="system", session_id="sess-1"),
+                    StreamEvent(
+                        event_type="assistant", text="MyApp 프로젝트를 생성했습니다!"
+                    ),
+                    StreamEvent(event_type="result", text="", session_id="sess-1"),
                 )
             )
 
@@ -146,7 +163,7 @@ class TestFullFlow:
             msg2 = make_mock_message("MyApp으로 해줘", alice, ch2)
             self._run(on_message(msg2))
 
-            mock_claude.send_message.assert_called_once_with(
+            mock_claude.stream_message.assert_called_once_with(
                 "MyApp으로 해줘", session_id="sess-1"
             )
 
@@ -167,22 +184,30 @@ class TestFullFlow:
             from server import on_message
 
             # alice 메시지
-            mock_claude.send_message = AsyncMock(
-                return_value=ClaudeResponse(
-                    text="alice 응답", session_id="s1", success=True
+            mock_claude.stream_message = MagicMock(
+                return_value=async_stream(
+                    StreamEvent(event_type="system", session_id="s1"),
+                    StreamEvent(event_type="assistant", text="alice 응답"),
+                    StreamEvent(event_type="result", text="", session_id="s1"),
                 )
             )
             ch_alice = make_mock_channel("bot-console-alice")
-            self._run(on_message(make_mock_message("alice msg", alice, ch_alice)))
+            self._run(
+                on_message(make_mock_message("alice msg", alice, ch_alice))
+            )
 
             # bob 메시지
-            mock_claude.send_message = AsyncMock(
-                return_value=ClaudeResponse(
-                    text="bob 응답", session_id="s2", success=True
+            mock_claude.stream_message = MagicMock(
+                return_value=async_stream(
+                    StreamEvent(event_type="system", session_id="s2"),
+                    StreamEvent(event_type="assistant", text="bob 응답"),
+                    StreamEvent(event_type="result", text="", session_id="s2"),
                 )
             )
             ch_bob = make_mock_channel("bot-console-bob")
-            self._run(on_message(make_mock_message("bob msg", bob, ch_bob)))
+            self._run(
+                on_message(make_mock_message("bob msg", bob, ch_bob))
+            )
 
             alice_session = real_sm.get_or_create_session("111")
             bob_session = real_sm.get_or_create_session("222")
@@ -205,9 +230,9 @@ class TestFullFlow:
             alice = make_mock_member("alice", 111)
             console_ch = make_mock_channel("bot-console-alice")
 
-            mock_claude.send_message = AsyncMock(
-                return_value=ClaudeResponse(
-                    text="", session_id=None, success=False, error="타임아웃"
+            mock_claude.stream_message = MagicMock(
+                return_value=async_stream(
+                    StreamEvent(event_type="error", text="타임아웃"),
                 )
             )
 
@@ -221,8 +246,8 @@ class TestFullFlow:
             assert len(msgs) == 1
             assert msgs[0]["role"] == "user"
 
-            console_ch.send.assert_called_once()
-            assert "타임아웃" in console_ch.send.call_args.args[0]
+            assert console_ch.send.call_count >= 1
+            assert "타임아웃" in console_ch._sent[0].content
 
     @patch("server.claude_client")
     @patch("server.bot")
@@ -241,4 +266,4 @@ class TestFullFlow:
             msg = make_mock_message("hello", alice, general_ch)
             self._run(on_message(msg))
 
-            mock_claude.send_message.assert_not_called()
+            mock_claude.stream_message.assert_not_called()

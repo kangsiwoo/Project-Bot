@@ -13,6 +13,7 @@ from mcp.server.models import InitializationOptions
 from channel_manager import ChannelManager
 from claude_code_client import ClaudeCodeClient
 from config import DEFAULT_TEAMS, CUSTOM_TEAM_CHANNELS, NOTIFICATION_TYPES
+from discord_stream_handler import DiscordStreamHandler
 from session_manager import session_manager
 
 # 환경변수
@@ -64,12 +65,9 @@ async def on_ready():
             continue
 
 
-DISCORD_MSG_LIMIT = 2000
-
-
 @bot.event
 async def on_message(message: discord.Message):
-    """bot-console 채널 메시지를 감지하여 Claude Code CLI로 AI 응답을 전송한다."""
+    """bot-console 채널 메시지를 감지하여 Claude Code CLI 스트리밍으로 AI 응답을 전송한다."""
     # 봇 자신의 메시지 무시
     if message.author.bot:
         return
@@ -82,26 +80,27 @@ async def on_message(message: discord.Message):
     session = session_manager.get_or_create_session(user_id)
     session.add_message("user", message.content)
 
-    # 타이핑 인디케이터 표시 중 AI 응답 생성
-    async with message.channel.typing():
-        response = await claude_client.send_message(
-            message.content, session_id=session.session_id
-        )
+    # 스트리밍으로 AI 응답 생성 및 실시간 Discord 전송
+    stream_handler = DiscordStreamHandler(message.channel)
+    session_id_from_stream = None
 
-    if not response.success:
-        await message.channel.send(f"⚠️ {response.error}")
-        return
+    async for event in claude_client.stream_message(
+        message.content, session_id=session.session_id
+    ):
+        await stream_handler.handle_event(event)
+
+        # session_id 추출
+        if event.session_id:
+            session_id_from_stream = event.session_id
 
     # 세션 ID 갱신
-    if response.session_id:
-        session.session_id = response.session_id
+    if session_id_from_stream:
+        session.session_id = session_id_from_stream
 
-    session.add_message("assistant", response.text)
-
-    # Discord 2000자 제한 → 청크 분할
-    text = response.text
-    for i in range(0, len(text), DISCORD_MSG_LIMIT):
-        await message.channel.send(text[i : i + DISCORD_MSG_LIMIT])
+    # 전체 응답 텍스트를 세션에 저장
+    full_text = stream_handler.get_full_text()
+    if full_text:
+        session.add_message("assistant", full_text)
 
 
 def get_guild() -> discord.Guild:
