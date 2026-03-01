@@ -10,6 +10,7 @@ import mcp.types as types
 from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
+from channel_manager import ChannelManager
 from config import DEFAULT_TEAMS, CUSTOM_TEAM_CHANNELS, NOTIFICATION_TYPES
 
 # 환경변수
@@ -25,10 +26,37 @@ DISCORD_GUILD_ID = int(DISCORD_GUILD_ID)
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
+intents.members = True
 bot = discord.Client(intents=intents)
 
 # MCP 서버
 server = Server("project-bot")
+
+
+@bot.event
+async def on_ready():
+    """봇이 준비되면 모든 멤버에게 bot-console 채널을 자동 생성한다."""
+    guild = bot.get_guild(DISCORD_GUILD_ID)
+    if not guild:
+        return
+
+    channel_mgr = ChannelManager(guild)
+    created = 0
+
+    for member in guild.members:
+        if member.bot:
+            continue
+        try:
+            channel = await channel_mgr.create_user_console(member)
+            # 새로 생성된 채널이면 웰컴 메시지 전송
+            if channel.last_message_id is None:
+                await channel.send(
+                    f"👋 {member.mention}님, 여기는 AI 프로젝트 관리 채널입니다.\n"
+                    f"메시지를 보내면 AI가 프로젝트를 관리해드립니다."
+                )
+                created += 1
+        except Exception:
+            continue
 
 
 def get_guild() -> discord.Guild:
