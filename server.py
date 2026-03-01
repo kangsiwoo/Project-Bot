@@ -11,7 +11,9 @@ from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
 from channel_manager import ChannelManager
+from claude_code_client import ClaudeCodeClient
 from config import DEFAULT_TEAMS, CUSTOM_TEAM_CHANNELS, NOTIFICATION_TYPES
+from session_manager import session_manager
 
 # 환경변수
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
@@ -31,6 +33,9 @@ bot = discord.Client(intents=intents)
 
 # MCP 서버
 server = Server("project-bot")
+
+# Claude Code CLI 클라이언트
+claude_client = ClaudeCodeClient()
 
 
 @bot.event
@@ -57,6 +62,46 @@ async def on_ready():
                 created += 1
         except Exception:
             continue
+
+
+DISCORD_MSG_LIMIT = 2000
+
+
+@bot.event
+async def on_message(message: discord.Message):
+    """bot-console 채널 메시지를 감지하여 Claude Code CLI로 AI 응답을 전송한다."""
+    # 봇 자신의 메시지 무시
+    if message.author.bot:
+        return
+
+    # bot-console 채널만 처리
+    if not ChannelManager.is_console_channel(message.channel):
+        return
+
+    user_id = str(message.author.id)
+    session = session_manager.get_or_create_session(user_id)
+    session.add_message("user", message.content)
+
+    # 타이핑 인디케이터 표시 중 AI 응답 생성
+    async with message.channel.typing():
+        response = await claude_client.send_message(
+            message.content, session_id=session.session_id
+        )
+
+    if not response.success:
+        await message.channel.send(f"⚠️ {response.error}")
+        return
+
+    # 세션 ID 갱신
+    if response.session_id:
+        session.session_id = response.session_id
+
+    session.add_message("assistant", response.text)
+
+    # Discord 2000자 제한 → 청크 분할
+    text = response.text
+    for i in range(0, len(text), DISCORD_MSG_LIMIT):
+        await message.channel.send(text[i : i + DISCORD_MSG_LIMIT])
 
 
 def get_guild() -> discord.Guild:
