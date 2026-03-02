@@ -1,5 +1,7 @@
 """Claude Code CLI subprocess 실행 모듈"""
 
+from __future__ import annotations
+
 import asyncio
 import os
 import tempfile
