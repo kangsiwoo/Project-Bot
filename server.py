@@ -9,6 +9,7 @@ from typing import Any
 import discord
 import mcp.types as types
 import uvicorn
+from dotenv import load_dotenv
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
@@ -21,6 +22,9 @@ from session_manager import session_manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# .env 파일에서 환경변수 로드 (기존 환경변수를 덮어쓰지 않음)
+load_dotenv()
 
 # 환경변수
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')

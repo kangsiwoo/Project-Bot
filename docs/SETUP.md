@@ -55,11 +55,22 @@ uv pip install -r requirements.txt
 
 ## 3단계: 서버 실행
 
-환경 변수를 설정하고 서버를 실행합니다. Discord 봇과 MCP HTTP 서버가 동시에 시작됩니다.
+`.env.example`을 복사하여 `.env` 파일을 생성하고 값을 채웁니다:
 
 ```bash
-export DISCORD_TOKEN=봇토큰여기
-export DISCORD_GUILD_ID=서버ID여기
+cp .env.example .env
+```
+
+`.env` 파일을 열고 실제 값을 입력합니다:
+
+```env
+DISCORD_TOKEN=실제_봇_토큰
+DISCORD_GUILD_ID=실제_서버_ID
+```
+
+서버를 실행합니다. Discord 봇과 MCP HTTP 서버가 동시에 시작됩니다.
+
+```bash
 python server.py
 ```
 
