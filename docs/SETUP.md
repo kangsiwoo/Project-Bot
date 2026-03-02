@@ -169,3 +169,9 @@ python -m pytest tests/ -v
 
 - 봇에 Administrator 권한이 부여되었는지 확인
 - OAuth2 URL을 다시 생성하여 봇을 재초대
+
+### `MCP 서버 연결 실패`
+
+- `python server.py`로 서버가 실행 중인지 확인
+- `http://localhost:8080/mcp`로 접속 가능한지 확인
+- 방화벽이 8080 포트를 차단하고 있지 않은지 확인
