@@ -53,11 +53,19 @@ uv pip install -r requirements.txt
 
 ---
 
-## 3단계: Claude Code에 MCP 서버 등록
+## 3단계: 서버 실행
+
+환경 변수를 설정하고 서버를 실행합니다. Discord 봇과 MCP HTTP 서버가 동시에 시작됩니다.
 
 ```bash
-claude mcp add project-bot --transport stdio -e DISCORD_TOKEN=봇토큰여기 -e DISCORD_GUILD_ID=서버ID여기 -- python /path/to/project-bot/server.py
+export DISCORD_TOKEN=봇토큰여기
+export DISCORD_GUILD_ID=서버ID여기
+python server.py
 ```
+
+서버가 정상 시작되면:
+- Discord 봇이 온라인 상태로 전환됩니다
+- MCP HTTP 서버가 `http://localhost:8080/mcp`에서 대기합니다
 
 **DISCORD_GUILD_ID 확인 방법:**
 1. Discord 설정 → 고급 → 개발자 모드 활성화
@@ -65,7 +73,17 @@ claude mcp add project-bot --transport stdio -e DISCORD_TOKEN=봇토큰여기 -e
 
 ---
 
-## 4단계: Stop 훅 설정 (백업 알림)
+## 4단계: Claude Code에 MCP 서버 등록
+
+서버가 실행 중인 상태에서 별도 터미널에서 등록합니다:
+
+```bash
+claude mcp add project-bot --transport http http://localhost:8080/mcp
+```
+
+---
+
+## 5단계: Stop 훅 설정 (백업 알림)
 
 ```bash
 # 프로젝트 디렉터리에 설정 파일 복사
@@ -88,7 +106,7 @@ export DISCORD_WEBHOOK_URL="복사한_웹훅_URL"
 
 ---
 
-## 5단계: 동작 확인
+## 6단계: 동작 확인
 
 Claude Code에서 다음과 같이 테스트합니다:
 
