@@ -13,21 +13,19 @@ class ConversationSession:
     messages: List[Dict[str, str]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     last_activity: datetime = field(default_factory=datetime.now)
-    session_id: str | None = None  # Claude Code --resume 용
 
     def add_message(self, role: str, content: str):
         """메시지 추가"""
         self.messages.append({"role": role, "content": content})
         self.last_activity = datetime.now()
 
-    def get_messages(self, max_messages: int = 50) -> List[Dict[str, str]]:
+    def get_recent_messages(self, limit: int = 10) -> List[Dict[str, str]]:
         """최근 N개 메시지 반환"""
-        return self.messages[-max_messages:]
+        return self.messages[-limit:]
 
     def clear(self):
         """대화 히스토리 초기화"""
         self.messages.clear()
-        self.session_id = None
         self.last_activity = datetime.now()
 
 
