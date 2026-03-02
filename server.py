@@ -1,20 +1,26 @@
 import asyncio
 import datetime
 import json
+import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 import discord
-import mcp.server.stdio
 import mcp.types as types
-from mcp.server.lowlevel import NotificationOptions, Server
-from mcp.server.models import InitializationOptions
+import uvicorn
+from mcp.server.lowlevel import Server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
 from channel_manager import ChannelManager
 from claude_code_client import ClaudeCodeClient
-from config import DEFAULT_TEAMS, CUSTOM_TEAM_CHANNELS, NOTIFICATION_TYPES
-from discord_stream_handler import DiscordStreamHandler
+from config import CUSTOM_TEAM_CHANNELS, DEFAULT_TEAMS, NOTIFICATION_TYPES
 from session_manager import session_manager
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 환경변수
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
@@ -35,8 +41,57 @@ bot = discord.Client(intents=intents)
 # MCP 서버
 server = Server("project-bot")
 
+# MCP Streamable HTTP 설정
+session_mgr = StreamableHTTPSessionManager(
+    app=server, json_response=False, stateless=False
+)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    async with session_mgr.run():
+        yield
+
+
+starlette_app = Starlette(
+    routes=[Mount("/mcp", app=session_mgr.handle_request)],
+    lifespan=lifespan,
+)
+
 # Claude Code CLI 클라이언트
 claude_client = ClaudeCodeClient()
+
+# 동시 실행 제한
+_semaphore = asyncio.Semaphore(3)
+
+
+def split_message(text: str, limit: int = 2000) -> list[str]:
+    """텍스트를 Discord 메시지 길이 제한에 맞게 분할한다. 코드블록을 인식한다."""
+    if not text:
+        return []
+    chunks = []
+    while len(text) > limit:
+        split_at = text.rfind('\n', 0, limit)
+        if split_at == -1:
+            split_at = text.rfind(' ', 0, limit)
+        if split_at == -1:
+            split_at = limit
+        chunk = text[:split_at]
+        open_blocks = chunk.count('```')
+        # 코드블록 래핑 시 split_at이 너무 작으면 진행이 안 됨 (무한루프 방지)
+        if open_blocks % 2 == 1 and split_at < limit // 2:
+            split_at = limit
+            chunk = text[:split_at]
+            open_blocks = chunk.count('```')
+        if open_blocks % 2 == 1:  # 열린 코드블록 존재
+            chunk += '\n```'
+            text = '```\n' + text[split_at:].lstrip('\n')
+        else:
+            text = text[split_at:].lstrip('\n')
+        chunks.append(chunk)
+    if text:
+        chunks.append(text)
+    return chunks
 
 
 @bot.event
@@ -47,60 +102,49 @@ async def on_ready():
         return
 
     channel_mgr = ChannelManager(guild)
-    created = 0
 
     for member in guild.members:
         if member.bot:
             continue
         try:
             channel = await channel_mgr.create_user_console(member)
-            # 새로 생성된 채널이면 웰컴 메시지 전송
             if channel.last_message_id is None:
                 await channel.send(
                     f"👋 {member.mention}님, 여기는 AI 프로젝트 관리 채널입니다.\n"
                     f"메시지를 보내면 AI가 프로젝트를 관리해드립니다."
                 )
-                created += 1
         except Exception:
             continue
 
 
 @bot.event
 async def on_message(message: discord.Message):
-    """bot-console 채널 메시지를 감지하여 Claude Code CLI 스트리밍으로 AI 응답을 전송한다."""
-    # 봇 자신의 메시지 무시
+    """bot-console 채널 메시지를 감지하여 Claude Code CLI로 AI 응답을 전송한다."""
     if message.author.bot:
         return
 
-    # bot-console 채널만 처리
     if not ChannelManager.is_console_channel(message.channel):
         return
 
     user_id = str(message.author.id)
     session = session_manager.get_or_create_session(user_id)
+
+    # 컨텍스트는 현재 메시지 추가 전에 가져온다
+    context_messages = session.get_recent_messages(limit=10)
     session.add_message("user", message.content)
 
-    # 스트리밍으로 AI 응답 생성 및 실시간 Discord 전송
-    stream_handler = DiscordStreamHandler(message.channel)
-    session_id_from_stream = None
+    async with _semaphore:
+        async with message.channel.typing():
+            result = await claude_client.send_message(
+                message.content, context_messages=context_messages
+            )
 
-    async for event in claude_client.stream_message(
-        message.content, session_id=session.session_id
-    ):
-        await stream_handler.handle_event(event)
-
-        # session_id 추출
-        if event.session_id:
-            session_id_from_stream = event.session_id
-
-    # 세션 ID 갱신
-    if session_id_from_stream:
-        session.session_id = session_id_from_stream
-
-    # 전체 응답 텍스트를 세션에 저장
-    full_text = stream_handler.get_full_text()
-    if full_text:
-        session.add_message("assistant", full_text)
+        if result.success:
+            session.add_message("assistant", result.text)
+            for chunk in split_message(result.text):
+                await message.channel.send(chunk)
+        else:
+            await message.channel.send(f"⚠️ {result.error}")
 
 
 def get_guild() -> discord.Guild:
@@ -249,14 +293,13 @@ async def list_tools() -> list[types.Tool]:
 
 
 # ---------------------------------------------------------------------------
-# 도구 핸들러 (Phase 2에서 개별 구현 예정)
+# 도구 핸들러
 # ---------------------------------------------------------------------------
 
 async def handle_create_project(arguments: dict[str, Any]) -> list[types.TextContent]:
     guild = get_guild()
     project_name = arguments["project_name"]
 
-    # 커스텀 팀이 지정되었으면 파싱, 아니면 기본 템플릿 사용
     custom_teams_raw = arguments.get("teams", "")
     if custom_teams_raw:
         team_names = [t.strip() for t in custom_teams_raw.split(",") if t.strip()]
@@ -267,10 +310,8 @@ async def handle_create_project(arguments: dict[str, Any]) -> list[types.TextCon
     created_channels = []
 
     if team_names is None:
-        # 기본 5개 팀 템플릿
         teams = DEFAULT_TEAMS
     else:
-        # 커스텀 팀: CUSTOM_TEAM_CHANNELS 템플릿 사용
         teams = {}
         for name in team_names:
             teams[name] = [
@@ -300,17 +341,14 @@ async def handle_add_team(arguments: dict[str, Any]) -> list[types.TextContent]:
     team_name = arguments["team_name"]
     prefix = f"{project_name} / "
 
-    # 프로젝트 존재 확인
     project_categories = [c for c in guild.categories if c.name.startswith(prefix)]
     if not project_categories:
         raise ValueError(f"프로젝트 '{project_name}'를 찾을 수 없습니다")
 
-    # 팀 중복 확인
     new_category_name = f"{project_name} / {team_name}"
     if any(c.name == new_category_name for c in guild.categories):
         raise ValueError(f"팀 '{team_name}'이(가) 이미 존재합니다")
 
-    # 기본 템플릿에 있는 팀이면 해당 채널, 아니면 커스텀 채널
     if team_name in DEFAULT_TEAMS:
         channels = DEFAULT_TEAMS[team_name]
     else:
@@ -334,7 +372,6 @@ async def handle_add_channel(arguments: dict[str, Any]) -> list[types.TextConten
     team_name = arguments["team_name"]
     channel_name = arguments["channel_name"]
 
-    # 카테고리 검색
     target_name = f"{project_name} / {team_name}"
     category = next(
         (c for c in guild.categories if c.name == target_name), None
@@ -344,7 +381,6 @@ async def handle_add_channel(arguments: dict[str, Any]) -> list[types.TextConten
             f"카테고리 '{target_name}'를 찾을 수 없습니다"
         )
 
-    # 채널 중복 확인
     if any(ch.name == channel_name for ch in category.channels):
         raise ValueError(f"채널 '{channel_name}'이(가) 이미 존재합니다")
 
@@ -405,7 +441,6 @@ async def handle_send_notification(arguments: dict[str, Any]) -> list[types.Text
     if event_type not in NOTIFICATION_TYPES:
         raise ValueError(f"알 수 없는 event_type: {event_type}")
 
-    # 프로젝트 내 claude-알림 채널 검색
     prefix = f"{project_name} / "
     notification_channel = None
     for category in guild.categories:
@@ -423,7 +458,6 @@ async def handle_send_notification(arguments: dict[str, Any]) -> list[types.Text
             f"프로젝트 '{project_name}'에서 claude-알림 채널을 찾을 수 없습니다"
         )
 
-    # Embed 생성
     nt = NOTIFICATION_TYPES[event_type]
     embed = discord.Embed(
         title=f"{nt['emoji']} {nt['label']}",
@@ -513,28 +547,26 @@ async def call_tool(
 # 메인 진입점
 # ---------------------------------------------------------------------------
 
+async def run_mcp_server():
+    """MCP HTTP 서버를 실행한다."""
+    config = uvicorn.Config(
+        starlette_app, host="0.0.0.0", port=8080, log_level="info"
+    )
+    uvi_server = uvicorn.Server(config)
+    await uvi_server.serve()
+
+
 async def main():
-    # Discord 봇을 백그라운드 태스크로 실행
-    bot_task = asyncio.create_task(bot.start(DISCORD_TOKEN))
-
-    # 봇이 준비될 때까지 대기 (로그인 완료 후 ready 상태까지)
-    while not bot.is_ready():
-        await asyncio.sleep(0.5)
-
-    # MCP 서버 실행 (stdio 트랜스포트)
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="project-bot",
-                server_version="1.0.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
-                ),
-            ),
+    try:
+        await asyncio.gather(
+            bot.start(DISCORD_TOKEN),
+            run_mcp_server(),
         )
+    except Exception as e:
+        logger.error(f"서비스 종료: {e}")
+    finally:
+        if not bot.is_closed():
+            await bot.close()
 
 
 if __name__ == "__main__":
