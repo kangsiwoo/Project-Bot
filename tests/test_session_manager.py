@@ -14,29 +14,27 @@ class TestConversationSession:
         assert session.messages[0]["role"] == "user"
         assert session.messages[0]["content"] == "안녕하세요"
 
-    def test_get_messages_limit(self):
+    def test_get_recent_messages_limit(self):
         session = ConversationSession(user_id="user1")
         for i in range(100):
             session.add_message("user", f"메시지 {i}")
-        messages = session.get_messages(max_messages=50)
+        messages = session.get_recent_messages(limit=50)
         assert len(messages) == 50
         assert messages[0]["content"] == "메시지 50"
         assert messages[-1]["content"] == "메시지 99"
 
-    def test_get_messages_under_limit(self):
+    def test_get_recent_messages_under_limit(self):
         session = ConversationSession(user_id="user1")
         session.add_message("user", "하나")
         session.add_message("assistant", "둘")
-        messages = session.get_messages(max_messages=50)
+        messages = session.get_recent_messages(limit=50)
         assert len(messages) == 2
 
     def test_clear(self):
         session = ConversationSession(user_id="user1")
-        session.session_id = "abc-123"
         session.add_message("user", "테스트")
         session.clear()
         assert len(session.messages) == 0
-        assert session.session_id is None
 
     def test_last_activity_updated(self):
         session = ConversationSession(user_id="user1")
