@@ -23,9 +23,10 @@ def make_mock_member(name, member_id, is_bot=False):
     return member
 
 
-def make_mock_channel(name, has_messages=False):
+def make_mock_channel(name, has_messages=False, channel_id=900):
     ch = MagicMock()
     ch.name = name
+    ch.id = channel_id
     ch.last_message_id = 12345 if has_messages else None
     sent_messages = []
 
@@ -76,7 +77,7 @@ class TestFullFlow:
             mock_bot.get_guild.return_value = guild
 
             # on_ready: 채널 생성
-            new_ch = make_mock_channel("bot-console-alice", has_messages=False)
+            new_ch = make_mock_channel("bot-console-alice", has_messages=False, channel_id=500)
             mgr_instance = MockChannelMgr.return_value
             mgr_instance.create_user_console = AsyncMock(return_value=new_ch)
 
@@ -96,7 +97,7 @@ class TestFullFlow:
                 )
             )
 
-            console_ch = make_mock_channel("bot-console-alice")
+            console_ch = make_mock_channel("bot-console-alice", channel_id=501)
             msg = make_mock_message("프로젝트 만들어줘", alice, console_ch)
 
             from server import on_message
@@ -105,8 +106,8 @@ class TestFullFlow:
 
             mock_claude.send_message.assert_called_once()
 
-            # 세션에 대화 기록이 저장됨
-            session = real_sm.get_or_create_session("111")
+            # 세션에 대화 기록이 저장됨 (채널 ID 기반)
+            session = real_sm.get_or_create_session("501", "111")
             msgs = session.get_recent_messages(limit=50)
             assert len(msgs) == 2
             assert msgs[0] == {"role": "user", "content": "프로젝트 만들어줘"}
@@ -134,7 +135,7 @@ class TestFullFlow:
                 )
             )
 
-            ch1 = make_mock_channel("bot-console-alice")
+            ch1 = make_mock_channel("bot-console-alice", channel_id=601)
             msg1 = make_mock_message("프로젝트 만들어줘", alice, ch1)
             self._run(on_message(msg1))
 
@@ -142,14 +143,14 @@ class TestFullFlow:
             call_args_1 = mock_claude.send_message.call_args
             assert call_args_1.kwargs["context_messages"] == []
 
-            # 2턴: 이전 대화가 컨텍스트로 전달됨
+            # 2턴: 이전 대화가 컨텍스트로 전달됨 (같은 채널)
             mock_claude.send_message = AsyncMock(
                 return_value=ClaudeResponse(
                     text="MyApp 프로젝트를 생성했습니다!", success=True
                 )
             )
 
-            ch2 = make_mock_channel("bot-console-alice")
+            ch2 = make_mock_channel("bot-console-alice", channel_id=601)
             msg2 = make_mock_message("MyApp으로 해줘", alice, ch2)
             self._run(on_message(msg2))
 
@@ -159,7 +160,7 @@ class TestFullFlow:
             assert context[0]["content"] == "프로젝트 만들어줘"
             assert context[1]["content"] == "어떤 프로젝트를 만들까요?"
 
-            session = real_sm.get_or_create_session("111")
+            session = real_sm.get_or_create_session("601", "111")
             assert len(session.get_recent_messages(limit=50)) == 4
 
     @patch("server.claude_client")
@@ -179,7 +180,7 @@ class TestFullFlow:
             mock_claude.send_message = AsyncMock(
                 return_value=ClaudeResponse(text="alice 응답", success=True)
             )
-            ch_alice = make_mock_channel("bot-console-alice")
+            ch_alice = make_mock_channel("bot-console-alice", channel_id=701)
             self._run(
                 on_message(make_mock_message("alice msg", alice, ch_alice))
             )
@@ -188,13 +189,13 @@ class TestFullFlow:
             mock_claude.send_message = AsyncMock(
                 return_value=ClaudeResponse(text="bob 응답", success=True)
             )
-            ch_bob = make_mock_channel("bot-console-bob")
+            ch_bob = make_mock_channel("bot-console-bob", channel_id=702)
             self._run(
                 on_message(make_mock_message("bob msg", bob, ch_bob))
             )
 
-            alice_session = real_sm.get_or_create_session("111")
-            bob_session = real_sm.get_or_create_session("222")
+            alice_session = real_sm.get_or_create_session("701", "111")
+            bob_session = real_sm.get_or_create_session("702", "222")
 
             assert len(alice_session.get_recent_messages(limit=50)) == 2
             assert len(bob_session.get_recent_messages(limit=50)) == 2
@@ -210,7 +211,7 @@ class TestFullFlow:
 
         with patch("server.session_manager", real_sm):
             alice = make_mock_member("alice", 111)
-            console_ch = make_mock_channel("bot-console-alice")
+            console_ch = make_mock_channel("bot-console-alice", channel_id=801)
 
             mock_claude.send_message = AsyncMock(
                 return_value=ClaudeResponse(
@@ -223,7 +224,7 @@ class TestFullFlow:
 
             self._run(on_message(msg))
 
-            session = real_sm.get_or_create_session("111")
+            session = real_sm.get_or_create_session("801", "111")
             msgs = session.get_recent_messages(limit=50)
             assert len(msgs) == 1
             assert msgs[0]["role"] == "user"
