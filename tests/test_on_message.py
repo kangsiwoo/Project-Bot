@@ -10,10 +10,11 @@ os.environ.setdefault("DISCORD_GUILD_ID", "123456789")
 from claude_code_client import ClaudeResponse
 
 
-def make_mock_channel(name="bot-console-alice"):
+def make_mock_channel(name="bot-console-alice", channel_id=900):
     """typing() async context manager를 포함한 mock 채널을 생성한다."""
     ch = MagicMock()
     ch.name = name
+    ch.id = channel_id
     sent_messages = []
 
     async def mock_send(content):

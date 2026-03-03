@@ -162,8 +162,9 @@ async def on_message(message: discord.Message):
     if not ChannelManager.is_console_channel(message.channel):
         return
 
+    channel_id = str(message.channel.id)
     user_id = str(message.author.id)
-    session = session_manager.get_or_create_session(user_id)
+    session = session_manager.get_or_create_session(channel_id, user_id)
 
     # 컨텍스트는 현재 메시지 추가 전에 가져온다
     context_messages = session.get_recent_messages(limit=10)

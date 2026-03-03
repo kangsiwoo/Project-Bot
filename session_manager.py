@@ -1,4 +1,4 @@
-"""유저별 대화 세션 관리 모듈"""
+"""채널별 대화 세션 관리 모듈"""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -7,8 +7,9 @@ from typing import Dict, List
 
 @dataclass
 class ConversationSession:
-    """유저별 대화 세션"""
+    """채널별 대화 세션"""
 
+    channel_id: str
     user_id: str
     messages: List[Dict[str, str]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
@@ -35,6 +36,7 @@ class ConversationSession:
             message_limit: 포함할 최근 메시지 수. 0이면 메시지 미포함.
         """
         data = {
+            "channel_id": self.channel_id,
             "user_id": self.user_id,
             "message_count": len(self.messages),
             "created_at": self.created_at.isoformat(),
@@ -46,39 +48,43 @@ class ConversationSession:
 
 
 class SessionManager:
-    """전역 세션 관리자"""
+    """전역 세션 관리자 (채널 단위)"""
 
     def __init__(self):
         self._sessions: Dict[str, ConversationSession] = {}
 
-    def get_or_create_session(self, user_id: str) -> ConversationSession:
-        """세션 조회 또는 생성"""
-        if user_id not in self._sessions:
-            self._sessions[user_id] = ConversationSession(user_id=user_id)
-        return self._sessions[user_id]
+    def get_or_create_session(
+        self, channel_id: str, user_id: str
+    ) -> ConversationSession:
+        """채널별 세션 조회 또는 생성"""
+        if channel_id not in self._sessions:
+            self._sessions[channel_id] = ConversationSession(
+                channel_id=channel_id, user_id=user_id
+            )
+        return self._sessions[channel_id]
 
-    def get_session(self, user_id: str):
+    def get_session(self, channel_id: str):
         """세션 조회. 존재하지 않으면 None 반환."""
-        return self._sessions.get(user_id)
+        return self._sessions.get(channel_id)
 
     def list_sessions(self) -> Dict[str, "ConversationSession"]:
         """모든 세션의 얕은 복사본 반환."""
         return dict(self._sessions)
 
-    def delete_session(self, user_id: str):
+    def delete_session(self, channel_id: str):
         """세션 삭제"""
-        self._sessions.pop(user_id, None)
+        self._sessions.pop(channel_id, None)
 
     def cleanup_old_sessions(self, hours: int = 24) -> int:
         """오래된 세션 정리. 삭제된 세션 수 반환"""
         cutoff = datetime.now() - timedelta(hours=hours)
         to_delete = [
-            uid
-            for uid, session in self._sessions.items()
+            cid
+            for cid, session in self._sessions.items()
             if session.last_activity < cutoff
         ]
-        for uid in to_delete:
-            del self._sessions[uid]
+        for cid in to_delete:
+            del self._sessions[cid]
         return len(to_delete)
 
     @property
