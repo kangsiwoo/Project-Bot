@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.routing import Mount
 
 from channel_manager import ChannelManager
@@ -29,6 +33,7 @@ load_dotenv()
 # 환경변수
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 DISCORD_GUILD_ID = os.environ.get('DISCORD_GUILD_ID')
+API_KEY = os.environ.get('API_KEY')
 
 if not DISCORD_TOKEN or not DISCORD_GUILD_ID:
     raise SystemExit("DISCORD_TOKEN과 DISCORD_GUILD_ID 환경 변수를 설정해주세요.")
@@ -51,15 +56,42 @@ session_mgr = StreamableHTTPSessionManager(
 )
 
 
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """``/api`` 경로에만 API Key 인증을 적용하는 미들웨어."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api"):
+            if not API_KEY:
+                return JSONResponse(
+                    {"error": "서버에 API_KEY가 설정되지 않았습니다"},
+                    status_code=503,
+                )
+            provided = request.headers.get("X-API-Key")
+            if not provided:
+                return JSONResponse(
+                    {"error": "API Key가 필요합니다"},
+                    status_code=401,
+                )
+            if provided != API_KEY:
+                return JSONResponse(
+                    {"error": "유효하지 않은 API Key입니다"},
+                    status_code=401,
+                )
+        return await call_next(request)
+
+
 @asynccontextmanager
 async def lifespan(app):
     async with session_mgr.run():
+        if not API_KEY:
+            logger.warning("API_KEY 환경변수가 설정되지 않았습니다. REST API를 사용할 수 없습니다.")
         yield
 
 
 starlette_app = Starlette(
     routes=[Mount("/mcp", app=session_mgr.handle_request)],
     lifespan=lifespan,
+    middleware=[Middleware(APIKeyMiddleware)],
 )
 
 # Claude Code CLI 클라이언트
