@@ -17,7 +17,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Mount
+from starlette.routing import Mount, Route
 
 from channel_manager import ChannelManager
 from claude_code_client import ClaudeCodeClient
@@ -80,6 +80,62 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# ---------------------------------------------------------------------------
+# REST API 핸들러
+# ---------------------------------------------------------------------------
+
+
+async def api_list_sessions(request: Request) -> JSONResponse:
+    """GET /api/sessions — 활성 세션 목록 조회"""
+    sessions = session_manager.list_sessions()
+    data = {
+        "active_count": len(sessions),
+        "sessions": [s.to_dict() for s in sessions.values()],
+    }
+    return JSONResponse(data)
+
+
+async def api_get_session(request: Request) -> JSONResponse:
+    """GET /api/sessions/{user_id} — 특정 유저 세션 상세 조회"""
+    user_id = request.path_params["user_id"]
+    message_limit = int(request.query_params.get("message_limit", "20"))
+    session = session_manager.get_session(user_id)
+    if session is None:
+        return JSONResponse(
+            {"error": f"유저 '{user_id}'의 세션을 찾을 수 없습니다"},
+            status_code=404,
+        )
+    return JSONResponse(session.to_dict(message_limit=message_limit))
+
+
+async def api_delete_session(request: Request) -> JSONResponse:
+    """DELETE /api/sessions/{user_id} — 특정 유저 세션 삭제"""
+    user_id = request.path_params["user_id"]
+    session = session_manager.get_session(user_id)
+    if session is None:
+        return JSONResponse(
+            {"error": f"유저 '{user_id}'의 세션을 찾을 수 없습니다"},
+            status_code=404,
+        )
+    session_manager.delete_session(user_id)
+    return JSONResponse({"message": "세션이 삭제되었습니다", "user_id": user_id})
+
+
+async def api_cleanup_sessions(request: Request) -> JSONResponse:
+    """POST /api/sessions/cleanup — 오래된 세션 일괄 정리"""
+    hours = 24
+    try:
+        body = await request.json()
+        hours = body.get("hours", 24)
+    except Exception:
+        pass
+    deleted = session_manager.cleanup_old_sessions(hours=hours)
+    return JSONResponse({
+        "deleted_count": deleted,
+        "remaining_active": session_manager.active_count,
+    })
+
+
 @asynccontextmanager
 async def lifespan(app):
     async with session_mgr.run():
@@ -89,7 +145,13 @@ async def lifespan(app):
 
 
 starlette_app = Starlette(
-    routes=[Mount("/mcp", app=session_mgr.handle_request)],
+    routes=[
+        Mount("/mcp", app=session_mgr.handle_request),
+        Route("/api/sessions", api_list_sessions, methods=["GET"]),
+        Route("/api/sessions/cleanup", api_cleanup_sessions, methods=["POST"]),
+        Route("/api/sessions/{user_id}", api_get_session, methods=["GET"]),
+        Route("/api/sessions/{user_id}", api_delete_session, methods=["DELETE"]),
+    ],
     lifespan=lifespan,
     middleware=[Middleware(APIKeyMiddleware)],
 )
