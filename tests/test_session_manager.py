@@ -43,6 +43,38 @@ class TestConversationSession:
         session.add_message("user", "메시지")
         assert session.last_activity > before
 
+    def test_to_dict_basic(self):
+        session = ConversationSession(user_id="user1")
+        session.add_message("user", "hello")
+        d = session.to_dict()
+        assert d["user_id"] == "user1"
+        assert d["message_count"] == 1
+        assert "created_at" in d
+        assert "last_activity" in d
+        assert "recent_messages" not in d
+
+    def test_to_dict_with_messages(self):
+        session = ConversationSession(user_id="user1")
+        session.add_message("user", "안녕")
+        session.add_message("assistant", "반갑습니다")
+        d = session.to_dict(message_limit=10)
+        assert d["message_count"] == 2
+        assert len(d["recent_messages"]) == 2
+        assert d["recent_messages"][0]["content"] == "안녕"
+
+    def test_to_dict_zero_limit(self):
+        session = ConversationSession(user_id="user1")
+        session.add_message("user", "test")
+        d = session.to_dict(message_limit=0)
+        assert "recent_messages" not in d
+
+    def test_to_dict_datetime_format(self):
+        session = ConversationSession(user_id="user1")
+        d = session.to_dict()
+        # ISO 형식 검증
+        datetime.fromisoformat(d["created_at"])
+        datetime.fromisoformat(d["last_activity"])
+
 
 class TestSessionManager:
     def test_create_session(self):
@@ -98,3 +130,30 @@ class TestSessionManager:
         manager.get_or_create_session("user1")
         manager.get_or_create_session("user2")
         assert manager.active_count == 2
+
+    def test_get_session_existing(self):
+        manager = SessionManager()
+        manager.get_or_create_session("user1")
+        session = manager.get_session("user1")
+        assert session is not None
+        assert session.user_id == "user1"
+
+    def test_get_session_not_found(self):
+        manager = SessionManager()
+        assert manager.get_session("없는유저") is None
+
+    def test_list_sessions_returns_copy(self):
+        manager = SessionManager()
+        manager.get_or_create_session("user1")
+        manager.get_or_create_session("user2")
+        sessions = manager.list_sessions()
+        assert len(sessions) == 2
+        assert "user1" in sessions
+        # 반환된 딕셔너리를 변경해도 원본에 영향 없음
+        sessions.pop("user1")
+        assert manager.active_count == 2
+
+    def test_list_sessions_empty(self):
+        manager = SessionManager()
+        sessions = manager.list_sessions()
+        assert sessions == {}

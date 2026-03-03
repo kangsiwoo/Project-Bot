@@ -28,6 +28,22 @@ class ConversationSession:
         self.messages.clear()
         self.last_activity = datetime.now()
 
+    def to_dict(self, message_limit: int = 0) -> dict:
+        """세션 정보를 딕셔너리로 직렬화한다.
+
+        Args:
+            message_limit: 포함할 최근 메시지 수. 0이면 메시지 미포함.
+        """
+        data = {
+            "user_id": self.user_id,
+            "message_count": len(self.messages),
+            "created_at": self.created_at.isoformat(),
+            "last_activity": self.last_activity.isoformat(),
+        }
+        if message_limit > 0:
+            data["recent_messages"] = self.get_recent_messages(limit=message_limit)
+        return data
+
 
 class SessionManager:
     """전역 세션 관리자"""
@@ -40,6 +56,14 @@ class SessionManager:
         if user_id not in self._sessions:
             self._sessions[user_id] = ConversationSession(user_id=user_id)
         return self._sessions[user_id]
+
+    def get_session(self, user_id: str):
+        """세션 조회. 존재하지 않으면 None 반환."""
+        return self._sessions.get(user_id)
+
+    def list_sessions(self) -> Dict[str, "ConversationSession"]:
+        """모든 세션의 얕은 복사본 반환."""
+        return dict(self._sessions)
 
     def delete_session(self, user_id: str):
         """세션 삭제"""
